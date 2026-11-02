@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { getWebViewContent, MethodHandler } from '../utils/commandUtils'
-import { getPostList } from '../api/index'
+import { getPostList, getCommentList } from '../api/index'
 
 export function openPostView(context: vscode.ExtensionContext) {
   // 注册「打开页面」命令，将会在其他地方调用这个命令
@@ -23,6 +23,10 @@ export function openPostView(context: vscode.ExtensionContext) {
       getPostList(payload) {
         const { data: { page, seeLz } } = payload
         return getPostList(thread.href, page, seeLz)
+      },
+      getCommentList(payload) {
+        const { data: { pid, page } } = payload
+        return getCommentList(thread.href, pid, page)
       },
       log(message) {
         console.log(message)
