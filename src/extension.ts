@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { openPostView } from './command/openPostView'
 import { ThreadProvider, ThreadNode } from './provider/ThreadProvider'
 import { setCookie } from './api/axios'
+import { initBlacklist, addToBlacklist, openBlacklist, getBlacklistPath } from './utils/blacklist'
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('tieba is now active!');
@@ -18,6 +19,9 @@ export function activate(context: vscode.ExtensionContext) {
   // cookie 持久化
   let cookie: string = context.globalState.get('cookie') || ''
   setCookie(cookie, context) // 首次加载state中的cookie，传入context
+
+  // 黑名单文件初始化
+  initBlacklist(context)
 
   // 注册「打开 webview」命令
   context.subscriptions.push(openPostView(context))
@@ -56,6 +60,36 @@ export function activate(context: vscode.ExtensionContext) {
       }
     )
   })
+
+  // 删除帖子并加入黑名单, 需二次确认
+  context.subscriptions.push(vscode.commands.registerCommand('tieba.deleteThread', async (node: ThreadNode) => {
+    if(!node || !node.thread) {
+      return // 命令面板直接调用时没有节点
+    }
+    const confirm = await vscode.window.showWarningMessage(
+      `确定将「${node.label}」加入黑名单？加入后该帖不再显示。`,
+      { modal: true },
+      '确定'
+    )
+    if(confirm !== '确定') {
+      return
+    }
+    addToBlacklist(node.label)
+    threadProvider.refresh(node.parent)
+    vscode.window.showInformationMessage(`已将「${node.label}」加入黑名单`)
+  }))
+
+  // 编辑黑名单
+  context.subscriptions.push(vscode.commands.registerCommand('tieba.editBlacklist', () => {
+    return openBlacklist()
+  }))
+
+  // 黑名单文件保存后刷新列表
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => {
+    if(doc.uri.fsPath === getBlacklistPath()) {
+      threadProvider.refresh()
+    }
+  }))
 
   // 搜索帖子
   vscode.commands.registerCommand('tieba.search', async (node: ThreadNode) => {

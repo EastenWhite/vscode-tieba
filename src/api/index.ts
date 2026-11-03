@@ -309,6 +309,20 @@ async function pbThreadTitles(ids: number[], limit: number = 6): Promise<ThreadI
   return result.filter(item => !!item)
 }
 
+// 营销推广帖(如直播间拉人)的标题特征: 用「·」拼接多段营销短语
+// 例如 "560暴富厅·军团战队·等你进来·带你飞"
+// 这类帖服务端并不下发 is_ad 标记, 只能按标题特征兜底, 词表按需补充
+// 刻意只收录几乎只出现在推广文案里的词, 避免误杀正常帖
+const AD_TITLE_KEYWORDS = ['暴富厅', '福利厅', '带你飞', '等你进来', '点击领取', '红包群']
+
+function isAdThread(title: string): boolean {
+  // 正常帖标题极少出现两个以上的「·」分隔(兼容 · • ・ 几种码点)
+  if((title.match(/[·•・]/g) || []).length >= 2) {
+    return true
+  }
+  return AD_TITLE_KEYWORDS.some(word => title.includes(word))
+}
+
 // 获取某个吧的帖子
 export async function getThreadList(keyword: string = '高达模型'): Promise<ThreadItem[]> {
   const data = Buffer.concat([
@@ -356,6 +370,9 @@ export async function getThreadList(keyword: string = '高达模型'): Promise<T
       if(!id || !title) {
         continue
       }
+      if(isAdThread(title)) {
+        continue // 屏蔽营销推广帖
+      }
       threadList.push({
         title,
         href: `https://tieba.baidu.com/p/${id}`
@@ -363,7 +380,8 @@ export async function getThreadList(keyword: string = '高达模型'): Promise<T
     }
     // 没有下发 thread_list 时, 用 forum 的 tid 列表逐个补标题
     if(!threadList.length && forumTids.length) {
-      return await pbThreadTitles(forumTids.slice(0, 40))
+      const fallbackList = await pbThreadTitles(forumTids.slice(0, 40))
+      return fallbackList.filter(item => !isAdThread(item.title))
     }
     return threadList
   } catch(err) {
@@ -449,10 +467,15 @@ export async function getPostList(url: string = 'https://tieba.baidu.com/p/70293
         continue // post_list
       }
       const post = pbParse(item.value)
-      const pid = String(pbNumber(pbOne(post, 1)))
+      const pid = pbNumber(pbOne(post, 1))
+      const postDate = pbNumber(pbOne(post, 4))
+      const authorId = pbNumber(pbOne(post, 19))
+      // 广告楼层不携带楼层元数据(pid/作者/时间), 对应旧版 data-field === '{}' 的判断
+      if(!pid || !postDate || !authorId) {
+        continue
+      }
       const content = pbContent(post, 5)
-      const authorId = String(pbNumber(pbOne(post, 19)))
-      const author = pbUser(pbOne(post, 23)) || userMap[authorId] || ''
+      const author = pbUser(pbOne(post, 23)) || userMap[String(authorId)] || ''
 
       // 楼中楼: sub_post_list(15) -> sub_post_list(2)
       const commentList: any[] = []
@@ -470,9 +493,9 @@ export async function getPostList(url: string = 'https://tieba.baidu.com/p/70293
         text: content.text.trim(),
         author,
         imageList: content.imageList,
-        pid,
+        pid: String(pid),
         field: {},
-        date: formatTime(pbNumber(pbOne(post, 4))),
+        date: formatTime(postDate),
         commentList,
         commentCount: pbNumber(pbOne(post, 13)) // 楼中楼总数
       })

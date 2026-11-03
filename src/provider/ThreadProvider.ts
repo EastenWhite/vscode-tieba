@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import {getThreadList} from '../api/index'
 import { search } from '../api/search';
+import { readBlacklist } from '../utils/blacklist';
 
 export class ThreadProvider implements vscode.TreeDataProvider<ThreadNode> {
   public baList: ThreadNode[] = []
@@ -27,8 +28,13 @@ export class ThreadProvider implements vscode.TreeDataProvider<ThreadNode> {
           threadList = await getThreadList(element.label)
         }
         let nodeList: ThreadNode[] = []
+        // 黑名单中的贴名直接跳过, 不渲染
+        const blacklist = readBlacklist()
         for(let item of threadList) {
-          let threadNode = new ThreadNode(item.title, false, item)
+          if(blacklist.includes(item.title)) {
+            continue
+          }
+          let threadNode = new ThreadNode(item.title, false, item, null, element)
           // 点击一个帖子的标题, 在编辑器打开对应的帖子
           threadNode.command = {
             title: 'openPostView',
@@ -49,8 +55,8 @@ export class ThreadProvider implements vscode.TreeDataProvider<ThreadNode> {
   private _onDidChangeTreeData: vscode.EventEmitter<ThreadNode | undefined> = new vscode.EventEmitter<ThreadNode | undefined>();
   readonly onDidChangeTreeData: vscode.Event<ThreadNode | undefined> = this._onDidChangeTreeData.event;
 
-  // 刷新帖子
-  async refresh(node:ThreadNode) {
+  // 刷新帖子, 不传节点时刷新整个树
+  async refresh(node?:ThreadNode) {
     this._onDidChangeTreeData.fire(node);
   }
 }
@@ -60,7 +66,8 @@ export class ThreadNode extends vscode.TreeItem {
     public label: string,
     public isRoot: boolean,
     public thread?: ThreadItem,
-    public params?: object | null
+    public params?: object | null,
+    public parent?: ThreadNode
     ) {
     super(label, isRoot ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None)
     this.isRoot = isRoot,

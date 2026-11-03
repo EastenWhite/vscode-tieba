@@ -45,10 +45,11 @@
           <div :style="{marginTop: '1em'}">评论:</div>
           <div v-for="comment in item.commentList" :key="comment['comment_id']">
             <div>[{{comment.username}}] <span :style="{opacity: 0.5}">{{dayjs(comment.now_time * 1000).format('YYYY-MM-DD HH:mm:ss')}}</span></div>
-            <div v-html="comment.content" :style="{textIndent: '2em'}"></div>
+            <div v-html="comment.content" :style="{textIndent: '2em'}" @click="onClickCommentImage"></div>
           </div>
           <div v-if="item.commentCount > item.commentList.length">
-            <a href="#" @click="loadMoreComments(item)">查看更多评论（共{{item.commentCount}}条）</a>
+            <!-- 不用 href, 避免 webview 拦截链接点击后跳转并滚回顶部 -->
+            <a style="cursor: pointer" @click="loadMoreComments(item)">查看更多评论（共{{item.commentCount}}条）</a>
           </div>
         </div>
       </div>
@@ -110,8 +111,10 @@
           this.fetch(1)
         },
         // 楼中楼每页 30 条, 按已加载数量请求下一页并追加
+        // 追加后还原滚动位置, 只让新内容和下方内容往下推, 视口不动
         loadMoreComments(item) {
           const page = Math.floor(item.commentList.length / 30) + 1
+          const scrollTop = window.scrollY
           return callVscode('getCommentList', { pid: item.pid, page }).then(res => {
             if(res.errMessage || !res.commentList) {
               return
@@ -122,11 +125,25 @@
                 item.commentList.push(comment)
               }
             })
+            return this.$nextTick()
+          }).then(() => {
+            // 只有确实被拉回上方(如跳回顶部)时才还原, 浏览器滚动锚定把内容顶开的情况不干预
+            if(scrollTop > 0 && window.scrollY < scrollTop) {
+              window.scrollTo({ top: scrollTop })
+            }
           })
         },
         onClickImage(src) {
           callVscode('log', src)
           this.previewSrc = src
+        },
+        // 楼中楼内容由 v-html 渲染, 通过事件委托让评论图片也能点击查看大图
+        onClickCommentImage(event) {
+          const target = event.target
+          if(!target || !target.classList || !target.classList.contains('comment-img')) {
+            return
+          }
+          this.onClickImage(target.src)
         },
         closePreview() {
           this.previewSrc = ''
@@ -174,8 +191,8 @@
       height: auto;
       width: auto;
       max-width: 200px;
-      opacity: 1;
       vertical-align: middle;
+      cursor: pointer;
     }
     
     .pagenation-item {
